@@ -24,18 +24,16 @@ export default function LocationSelector({ onLocationSelect }: LocationSelectorP
         
         try {
           // Reverse geocoding to get address
-          const response = await fetch(
-            `https://api.opencagedata.com/geocode/v1/json?q=${latitude}+${longitude}&key=YOUR_API_KEY&limit=1`
-          );
+          const response = await fetch(`/api/geocode?lat=${latitude}&lon=${longitude}`);
           const data = await response.json();
-          const address = data.results?.[0]?.formatted || 'Current Location';
-          
+          const address = data.results?.[0]?.address || 'Current Location';
+
           onLocationSelect({ latitude, longitude, address });
         } catch (error) {
           console.error('Error getting address:', error);
           onLocationSelect({ latitude, longitude, address: 'Current Location' });
         }
-        
+
         setIsLoading(false);
       },
       (error) => {
@@ -53,20 +51,16 @@ export default function LocationSelector({ onLocationSelect }: LocationSelectorP
     setIsLoading(true);
     try {
       // Forward geocoding to get coordinates
-      const response = await fetch(
-        `https://api.opencagedata.com/geocode/v1/json?q=${encodeURIComponent(manualAddress)}&key=YOUR_API_KEY&limit=1`
-      );
+      const response = await fetch(`/api/geocode?q=${encodeURIComponent(manualAddress)}`);
       const data = await response.json();
-      
-      if (data.results && data.results.length > 0) {
-        const { lat, lng } = data.results[0].geometry;
-        onLocationSelect({ 
-          latitude: lat, 
-          longitude: lng, 
-          address: data.results[0].formatted 
-        });
-      } else {
+
+      if (response.ok && data.results && data.results.length > 0) {
+        const { latitude, longitude, address } = data.results[0];
+        onLocationSelect({ latitude, longitude, address });
+      } else if (response.ok) {
         alert('Address not found. Please try a different address.');
+      } else {
+        alert('Error finding address. Please try again.');
       }
     } catch (error) {
       console.error('Error geocoding address:', error);
@@ -89,7 +83,7 @@ export default function LocationSelector({ onLocationSelect }: LocationSelectorP
         className="w-full flex items-center justify-center gap-2 p-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
       >
         <Navigation className="w-5 h-5" />
-        {isLoading ? 'Getting your location...' : 'Use Current Location'}
+        {isLoading ? 'Getting your location' : 'Use Current Location'}
       </button>
       
       <div className="relative">
@@ -114,7 +108,7 @@ export default function LocationSelector({ onLocationSelect }: LocationSelectorP
           disabled={isLoading || !manualAddress.trim()}
           className="w-full p-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
-          {isLoading ? 'Finding location...' : 'Find Location'}
+          {isLoading ? 'Finding location' : 'Find Location'}
         </button>
       </form>
     </div>

@@ -1,13 +1,19 @@
 'use client';
 
 import { useState } from 'react';
+import dynamic from 'next/dynamic';
 import { EVModel, UserLocation, ChargingStation, SearchFilters } from '@/types';
 import CarSelector from '@/components/CarSelector';
 import LocationSelector from '@/components/LocationSelector';
 import ChargingStationCard from '@/components/ChargingStationCard';
-import ChargingStationMap from '@/components/ChargingStationMap';
 import { ChargingStationService } from '@/services/chargingStations';
 import { Zap, Map, List, Filter, Search } from 'lucide-react';
+
+// Leaflet needs the browser, so load the map on the client only
+const ChargingStationMap = dynamic(() => import('@/components/ChargingStationMap'), {
+  ssr: false,
+  loading: () => <div className="w-full h-full min-h-[400px]" />,
+});
 
 export default function Home() {
   const [selectedCar, setSelectedCar] = useState<EVModel | null>(null);
@@ -15,6 +21,7 @@ export default function Home() {
   const [stations, setStations] = useState<ChargingStation[]>([]);
   const [selectedStation, setSelectedStation] = useState<ChargingStation | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [hasSearched, setHasSearched] = useState(false);
   const [viewMode, setViewMode] = useState<'map' | 'list'>('map');
   const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState<SearchFilters>({
@@ -39,6 +46,7 @@ export default function Home() {
         filters
       );
       setStations(foundStations);
+      setHasSearched(true);
     } catch (error) {
       console.error('Error searching for stations:', error);
       alert('Error searching for charging stations. Please try again.');
@@ -168,7 +176,7 @@ export default function Home() {
                 className="w-full flex items-center justify-center gap-2 p-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 <Search className="w-5 h-5" />
-                {isLoading ? 'Searching...' : 'Find Charging Stations'}
+                {isLoading ? 'Searching' : 'Find Charging Stations'}
               </button>
 
               {/* Results Summary */}
@@ -177,7 +185,7 @@ export default function Home() {
                   Found {stations.length} charging station{stations.length !== 1 ? 's' : ''}
                   {stations.length > 0 && (
                     <div className="mt-1">
-                      Cheapest: ${stations[0].estimatedCost?.toFixed(2) || 'Free'}
+                      Cheapest: {stations[0].estimatedCost === undefined ? 'Price unknown' : stations[0].estimatedCost === 0 ? 'Free' : `$${stations[0].estimatedCost.toFixed(2)}`}
                     </div>
                   )}
                 </div>
@@ -191,23 +199,25 @@ export default function Home() {
               <div className="bg-white rounded-lg shadow-sm border p-8 text-center">
                 <Zap className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                 <h3 className="text-lg font-medium text-gray-900 mb-2">
-                  Ready to find charging stations?
+                  {hasSearched ? 'No compatible stations found' : 'Ready to find charging stations?'}
                 </h3>
                 <p className="text-gray-600">
-                  Select your EV model and location to get started
+                  {hasSearched
+                    ? 'Try a larger distance or lower the minimum power filter'
+                    : 'Select your EV model and location to get started'}
                 </p>
               </div>
             ) : isLoading ? (
               <div className="bg-white rounded-lg shadow-sm border p-8 text-center">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600 mx-auto mb-4"></div>
-                <p className="text-gray-600">Searching for charging stations...</p>
+                <p className="text-gray-600">Searching for charging stations</p>
               </div>
             ) : viewMode === 'map' ? (
               <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
                 <ChargingStationMap
                   stations={stations}
                   userLocation={userLocation || undefined}
-                  selectedStation={selectedStation}
+                  selectedStation={selectedStation || undefined}
                   onStationSelect={setSelectedStation}
                 />
               </div>

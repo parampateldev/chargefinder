@@ -43,7 +43,8 @@ export default function ChargingStationCard({ station, onSelect }: ChargingStati
   };
 
   const formatPrice = (price: number | undefined) => {
-    if (price === undefined || price === 0) return 'Free';
+    if (price === undefined) return 'Price unknown';
+    if (price === 0) return 'Free';
     return `$${price.toFixed(2)}`;
   };
 

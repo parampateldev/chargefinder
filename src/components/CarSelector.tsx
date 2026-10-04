@@ -39,7 +39,7 @@ export default function CarSelector({ selectedCar, onCarSelect }: CarSelectorPro
           <div className="p-3 border-b border-gray-200">
             <input
               type="text"
-              placeholder="Search for your EV model..."
+              placeholder="Search for your EV model"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
