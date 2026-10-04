@@ -1,11 +1,11 @@
 {
-  "name": "ev-charge-finder",
+  "name": "chargefinder",
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --turbopack",
-    "build": "next build --turbopack",
-    "start": "next start",
+    "dev": "next dev",
+    "build": "next build",
+    "start": "npx serve out",
     "lint": "eslint"
   },
   "dependencies": {

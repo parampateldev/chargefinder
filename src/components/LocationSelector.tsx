@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { MapPin, Navigation } from 'lucide-react';
+import { geocodeQuery } from '@/lib/geocode';
 
 interface LocationSelectorProps {
   onLocationSelect: (location: { latitude: number; longitude: number; address?: string }) => void;
@@ -19,21 +20,9 @@ export default function LocationSelector({ onLocationSelect }: LocationSelectorP
 
     setIsLoading(true);
     navigator.geolocation.getCurrentPosition(
-      async (position) => {
+      (position) => {
         const { latitude, longitude } = position.coords;
-        
-        try {
-          // Reverse geocoding to get address
-          const response = await fetch(`/api/geocode?lat=${latitude}&lon=${longitude}`);
-          const data = await response.json();
-          const address = data.results?.[0]?.address || 'Current Location';
-
-          onLocationSelect({ latitude, longitude, address });
-        } catch (error) {
-          console.error('Error getting address:', error);
-          onLocationSelect({ latitude, longitude, address: 'Current Location' });
-        }
-
+        onLocationSelect({ latitude, longitude, address: 'Current Location' });
         setIsLoading(false);
       },
       (error) => {
@@ -50,23 +39,18 @@ export default function LocationSelector({ onLocationSelect }: LocationSelectorP
 
     setIsLoading(true);
     try {
-      // Forward geocoding to get coordinates
-      const response = await fetch(`/api/geocode?q=${encodeURIComponent(manualAddress)}`);
-      const data = await response.json();
-
-      if (response.ok && data.results && data.results.length > 0) {
-        const { latitude, longitude, address } = data.results[0];
+      const results = await geocodeQuery(manualAddress.trim());
+      if (results.length > 0) {
+        const { latitude, longitude, address } = results[0];
         onLocationSelect({ latitude, longitude, address });
-      } else if (response.ok) {
-        alert('Address not found. Please try a different address.');
       } else {
-        alert('Error finding address. Please try again.');
+        alert('Address not found. Please try a different address.');
       }
     } catch (error) {
       console.error('Error geocoding address:', error);
       alert('Error finding address. Please try again.');
     }
-    
+
     setIsLoading(false);
   };
 
@@ -76,7 +60,7 @@ export default function LocationSelector({ onLocationSelect }: LocationSelectorP
         <MapPin className="w-5 h-5" />
         <span className="font-medium">Location</span>
       </div>
-      
+
       <button
         onClick={getCurrentLocation}
         disabled={isLoading}
@@ -85,7 +69,7 @@ export default function LocationSelector({ onLocationSelect }: LocationSelectorP
         <Navigation className="w-5 h-5" />
         {isLoading ? 'Getting your location' : 'Use Current Location'}
       </button>
-      
+
       <div className="relative">
         <div className="absolute inset-0 flex items-center">
           <div className="w-full border-t border-gray-300" />
@@ -94,7 +78,7 @@ export default function LocationSelector({ onLocationSelect }: LocationSelectorP
           <span className="px-2 bg-white text-gray-500">Or enter manually</span>
         </div>
       </div>
-      
+
       <form onSubmit={handleManualSubmit} className="space-y-2">
         <input
           type="text"

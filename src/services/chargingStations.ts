@@ -1,7 +1,8 @@
 import { ChargingStation, UserLocation, EVModel, SearchFilters } from '@/types';
+import { mapOcmResponse } from '@/lib/openChargeMap';
+import { fetchStationsFromOverpass } from '@/lib/overpassStations';
 
-// Tiny offline fallback, only used when /api/charging-stations fails.
-// Positions are offset from the searched location so the sample is visible.
+// Tiny offline fallback, only used when live station lookups fail.
 function buildFallbackStations(location: UserLocation): ChargingStation[] {
   return [
     {
@@ -37,6 +38,38 @@ function buildFallbackStations(location: UserLocation): ChargingStation[] {
   ];
 }
 
+async function fetchFromOpenChargeMap(
+  location: UserLocation,
+  maxDistance: number
+): Promise<ChargingStation[]> {
+  const apiKey = process.env.NEXT_PUBLIC_OPEN_CHARGE_MAP_API_KEY;
+  if (!apiKey) {
+    throw new Error('No Open Charge Map key configured');
+  }
+
+  const url = new URL('https://api.openchargemap.io/v3/poi/');
+  url.searchParams.set('output', 'json');
+  url.searchParams.set('latitude', String(location.latitude));
+  url.searchParams.set('longitude', String(location.longitude));
+  url.searchParams.set('distance', String(Math.min(maxDistance, 500)));
+  url.searchParams.set('distanceunit', 'KM');
+  url.searchParams.set('maxresults', '200');
+  url.searchParams.set('compact', 'false');
+  url.searchParams.set('verbose', 'false');
+  url.searchParams.set('key', apiKey);
+
+  const res = await fetch(url.toString(), {
+    headers: {
+      Accept: 'application/json',
+      'X-API-Key': apiKey,
+    },
+  });
+  if (!res.ok) {
+    throw new Error(`Open Charge Map returned ${res.status}`);
+  }
+  return mapOcmResponse(await res.json());
+}
+
 export class ChargingStationService {
   static async findNearbyStations(
     location: UserLocation,
@@ -51,7 +84,6 @@ export class ChargingStationService {
       stations = buildFallbackStations(location);
     }
 
-    // Filter by distance
     stations = stations.filter(station => {
       const distance = this.calculateDistance(
         location.latitude,
@@ -63,7 +95,6 @@ export class ChargingStationService {
       return distance <= filters.maxDistance;
     });
 
-    // Filter by connector compatibility
     stations = stations.filter(station =>
       station.connectors.some(connector =>
         userCar.connectorTypes.includes(connector.type) &&
@@ -71,7 +102,6 @@ export class ChargingStationService {
       )
     );
 
-    // Filter by connector types if specified
     if (filters.connectorTypes.length > 0) {
       stations = stations.filter(station =>
         station.connectors.some(connector =>
@@ -80,7 +110,6 @@ export class ChargingStationService {
       );
     }
 
-    // Filter by amenities if specified
     if (filters.amenities.length > 0) {
       stations = stations.filter(station =>
         filters.amenities.every(amenity =>
@@ -89,21 +118,17 @@ export class ChargingStationService {
       );
     }
 
-    // Filter by max price if specified
     if (filters.maxPricePerKwh !== undefined) {
       stations = stations.filter(station =>
         !station.pricing.energyRate || station.pricing.energyRate <= filters.maxPricePerKwh!
       );
     }
 
-    // Calculate estimated costs for user's car
     stations.forEach(station => {
       station.estimatedCost = this.calculateEstimatedCost(station, userCar);
     });
 
-    // Sort by estimated cost (cheapest first), then by distance
     stations.sort((a, b) => {
-      // Stations with unknown pricing go last.
       const aCost = a.estimatedCost ?? Number.POSITIVE_INFINITY;
       const bCost = b.estimatedCost ?? Number.POSITIVE_INFINITY;
       if (aCost !== bCost) {
@@ -119,17 +144,20 @@ export class ChargingStationService {
     location: UserLocation,
     maxDistance: number
   ): Promise<ChargingStation[]> {
-    const params = new URLSearchParams({
-      latitude: String(location.latitude),
-      longitude: String(location.longitude),
-      distance: String(maxDistance),
-    });
-    const response = await fetch(`/api/charging-stations?${params.toString()}`);
-    if (!response.ok) {
-      throw new Error(`Charging station API returned ${response.status}`);
+    // Prefer Open Charge Map when a free public key was baked in at build time.
+    if (process.env.NEXT_PUBLIC_OPEN_CHARGE_MAP_API_KEY) {
+      try {
+        return await fetchFromOpenChargeMap(location, maxDistance);
+      } catch (error) {
+        console.warn('Open Charge Map failed, trying OpenStreetMap Overpass:', error);
+      }
     }
-    const data = (await response.json()) as { stations?: ChargingStation[] };
-    return data.stations ?? [];
+
+    return fetchStationsFromOverpass(
+      location.latitude,
+      location.longitude,
+      maxDistance
+    );
   }
 
   private static calculateDistance(
@@ -138,7 +166,7 @@ export class ChargingStationService {
     lat2: number,
     lon2: number
   ): number {
-    const R = 6371; // Earth's radius in kilometers
+    const R = 6371;
     const dLat = this.deg2rad(lat2 - lat1);
     const dLon = this.deg2rad(lon2 - lon1);
     const a =
@@ -154,33 +182,23 @@ export class ChargingStationService {
   }
 
   private static calculateEstimatedCost(station: ChargingStation, userCar: EVModel): number | undefined {
-    // Find the best connector for the user's car
     const compatibleConnector = station.connectors
       .filter(connector => userCar.connectorTypes.includes(connector.type))
       .sort((a, b) => b.power - a.power)[0];
 
-    // Unknown pricing: no estimate. A rate of 0 means the station is free.
     if (!compatibleConnector || station.pricing.energyRate === undefined) {
       return undefined;
     }
 
-    // Estimate charging time based on connector power and battery capacity
     const chargingTimeHours = userCar.batteryCapacity / compatibleConnector.power;
-    
-    // Calculate cost
     let cost = 0;
-    
-    // Energy cost
+
     if (station.pricing.energyRate) {
       cost += userCar.batteryCapacity * station.pricing.energyRate;
     }
-    
-    // Time cost
     if (station.pricing.timeRate) {
       cost += chargingTimeHours * 60 * station.pricing.timeRate;
     }
-    
-    // Session fee
     if (station.pricing.sessionFee) {
       cost += station.pricing.sessionFee;
     }
